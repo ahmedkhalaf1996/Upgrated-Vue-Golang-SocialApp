@@ -1,5 +1,5 @@
 <template>
- <q-page class="constrain q-pa-md">
+ <q-page class="constrain q-pa-md resize-observer-fix">
     <div class="row q-col-gutter-lg">
         <div class="col-5">
             <q-card class="my-card" style="width: 100%; padding: 10px;">

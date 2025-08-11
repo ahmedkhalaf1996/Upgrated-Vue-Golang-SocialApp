@@ -1,14 +1,16 @@
 <template>
- <q-header class="bg-white text-grey-10" borderd>
-  <q-toolbar class="constrain x">
-    <q-btn flat to="/">
+ <q-header class="bg-white text-grey-10" bordered>
+  <q-toolbar class="constrain resize-observer-fix">
+    
+    <!-- KEEP YOUR ORIGINAL DESKTOP DESIGN EXACTLY -->
+    <q-btn flat to="/" class="gt-xs">
         <q-icon left size="3em" name="eva-camera-outline" />
         <q-toolbar-title class="text grand-hotel text-bold"> Home</q-toolbar-title>
     </q-btn>
 
-    <q-separator class="large-screen-only" vertical spaced />
+    <q-separator class="large-screen-only gt-xs" vertical spaced />
 
-    <q-toolbar-title class="text-center">
+    <q-toolbar-title class="text-center gt-xs">
         <q-input bottom-slots class="nuks" label="search" @keyup.enter="GoSearch($event)">
         </q-input>
     </q-toolbar-title>
@@ -18,6 +20,7 @@
     @click="GoToChat"
     :icon="unReadedMessages > 0 ? 'eva-message-square-outline': 'eva-message-square'"
     :color="unReadedMessages > 0 ? 'primary':'dark'"
+    class="gt-xs"
     >
      <q-badge v-if="unReadedMessages >0" color="negative" floating  rounded :label="unReadedMessages"/>
     </q-btn>
@@ -28,12 +31,13 @@
      @click="GoToNotification"
      :icon="notificationNum > 0 ? 'eva-bell-outline':'eva-bell'"
      :color="notificationNum > 0 ? 'primary': 'dark'"
+     class="gt-xs"
     >
      <q-badge v-if="notificationNum > 0 " floating color="negative" rounded :label="notificationNum"/>
     </q-btn>
  
 
-    <q-btn v-show="GetUserData()?.result" round>
+    <q-btn v-show="GetUserData()?.result" round class="gt-xs">
      <q-avatar size="42px" v-if="GetUserData()?.result?.imageUrl">
         <img :src="GetUserData()?.result?.imageUrl" >
      </q-avatar>
@@ -53,12 +57,141 @@
      </q-menu>
     </q-btn>
 
+    <!-- SIMPLE MOBILE VERSION (only shows on xs screens) -->
+    <!-- Mobile Menu Button -->
+    <q-btn 
+      flat 
+      round 
+      icon="eva-menu-outline" 
+      @click="mobileMenuOpen = !mobileMenuOpen"
+      class="lt-sm"
+    />
+    
+    <!-- Mobile Logo -->
+    <q-btn flat to="/" class="lt-sm">
+        <q-icon left size="2em" name="eva-camera-outline" />
+        <q-toolbar-title class="text grand-hotel text-bold">Home</q-toolbar-title>
+    </q-btn>
+    
+    <q-space class="lt-sm" />
+    
+    <!-- Mobile Avatar with Combined Badge -->
+    <q-btn v-show="GetUserData()?.result" round class="lt-sm">
+     <q-avatar size="32px" v-if="GetUserData()?.result?.imageUrl">
+        <img :src="GetUserData()?.result?.imageUrl" >
+     </q-avatar>
+     <q-avatar size="32px" v-else>
+        <img src="https://cdn-icons-png.flaticon.com/512/3237/3237472.png" >
+     </q-avatar>
+     
+     <!-- Combined Badge for Mobile -->
+     <q-badge 
+       v-if="(notificationNum + unReadedMessages) > 0" 
+       color="negative" 
+       floating 
+       rounded 
+       :label="notificationNum + unReadedMessages"
+     />
+     
+     <q-menu>
+        <q-list style="min-width: 120px">
+            <q-item clickable v-close-popup>
+                <q-item-section @click="Profile">Profile</q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item clickable v-close-popup>
+                <q-item-section @click="LogUserOut">Logout</q-item-section>
+            </q-item>
+        </q-list>
+     </q-menu>
+    </q-btn>
+
   </q-toolbar>
+
+  <!-- Simple Mobile Menu -->
+  <q-drawer
+    v-model="mobileMenuOpen"
+    overlay
+    :width="280"
+    bordered
+    class="bg-grey-1"
+  >
+    <q-list>
+      <q-item-label header>Menu</q-item-label>
+      
+      <!-- Search -->
+      <q-item>
+        <q-item-section>
+          <q-input 
+            dense
+            outlined
+            label="Search" 
+            @keyup.enter="GoSearch($event); mobileMenuOpen = false"
+          />
+        </q-item-section>
+      </q-item>
+      
+      <q-separator />
+      
+      <!-- Profile -->
+      <q-item clickable v-ripple @click="handleProfileClick" v-if="GetUserData()?.result">
+        <q-item-section avatar>
+          <q-icon name="eva-person-outline" />
+        </q-item-section>
+        <q-item-section>Profile</q-item-section>
+      </q-item>
+      
+      <!-- Messages with badge on icon -->
+      <q-item clickable v-ripple @click="handleChatClick" v-if="GetUserData()?.result">
+        <q-item-section avatar>
+          <div class="mobile-icon-badge">
+            <q-icon name="eva-message-square-outline" />
+            <q-badge 
+              v-if="unReadedMessages > 0" 
+              color="negative" 
+              :label="unReadedMessages"
+            />
+          </div>
+        </q-item-section>
+        <q-item-section>Messages</q-item-section>
+      </q-item>
+      
+      <!-- Notifications with badge on icon -->
+      <q-item clickable v-ripple @click="handleNotificationClick" v-if="GetUserData()?.result">
+        <q-item-section avatar>
+          <div class="mobile-icon-badge">
+            <q-icon name="eva-bell-outline" />
+            <q-badge 
+              v-if="notificationNum > 0" 
+              color="negative" 
+              :label="notificationNum"
+            />
+          </div>
+        </q-item-section>
+        <q-item-section>Notifications</q-item-section>
+      </q-item>
+      
+      <q-separator />
+      
+      <!-- Logout -->
+      <q-item clickable v-ripple @click="handleLogoutClick" v-if="GetUserData()?.result">
+        <q-item-section avatar>
+          <q-icon name="eva-log-out-outline" />
+        </q-item-section>
+        <q-item-section>Logout</q-item-section>
+      </q-item>
+      
+      <!-- Login for non-authenticated -->
+      <q-item clickable v-ripple to="/Auth" v-else>
+        <q-item-section avatar>
+          <q-icon name="eva-log-in-outline" />
+        </q-item-section>
+        <q-item-section>Login</q-item-section>
+      </q-item>
+    </q-list>
+  </q-drawer>
  </q-header>
-
-
 </template>
-  
   <script>
   import { mapGetters, mapMutations, mapActions, mapState } from 'vuex';
   export default {
@@ -67,6 +200,8 @@
         return {
           notificationNum:0,
           unReadedMessages:0,
+                  mobileMenuOpen: false, // Add this line
+
           // userData: null,
         }
     },
@@ -93,6 +228,26 @@
         'StopConnectionToNotify',
         'StopConnectionToChat'
       ]),
+        // Add these new handler methods:
+  handleProfileClick() {
+    this.mobileMenuOpen = false;
+    this.Profile();
+  },
+  
+  handleChatClick() {
+    this.mobileMenuOpen = false;
+    this.GoToChat();
+  },
+  
+  handleNotificationClick() {
+    this.mobileMenuOpen = false;
+    this.GoToNotification();
+  },
+  
+  handleLogoutClick() {
+    this.mobileMenuOpen = false;
+    this.LogUserOut();
+  },
       GoSearch(e) {
             console.log("go", e.target.value)
             this.$router.push({path: `/Search`, query: { search: e.target.value }})

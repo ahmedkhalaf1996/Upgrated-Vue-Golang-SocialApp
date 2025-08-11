@@ -14,8 +14,18 @@ type PostModel struct {
 	Name         string             `json:"name" bson:"name"`
 	SelectedFile string             `json:"selectedFile" bson:"selectedFile"`
 	Likes        []string           `json:"likes" bson:"likes"`
-	Comments     []string           `json:"comments" bson:"comments"`
+	Comments     []CommentWithUser  `json:"comments,omitempty" bson:"comments,omitempty"`
 	CreatedAt    time.Time          `json:"createdAt" bson:"createdAt"`
+}
+
+// Add this struct for comments with user data
+type CommentWithUser struct {
+	ID        primitive.ObjectID `json:"_id" bson:"_id"`
+	PostID    primitive.ObjectID `json:"postId" bson:"postId"`
+	UserID    primitive.ObjectID `json:"userId" bson:"userId"`
+	Value     string             `json:"value" bson:"value"`
+	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`
+	User      User               `json:"user" bson:"user"`
 }
 
 // interfaces

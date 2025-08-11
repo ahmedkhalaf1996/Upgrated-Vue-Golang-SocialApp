@@ -1,9 +1,9 @@
 <template>
- <div class="row col-12 constrain">
-   <div class="col-4 text-center">
+ <div class="row col-12  ">
+   <div class="col-4 text-center resize-observer-fix">
     <q-avatar size="150px">
-     <img v-if="userData?.imageUrl" :src="userData?.imageUrl" >
-     <img v-else src="https://cdn-icons-png.flaticon.com/512/3237/3237472.png">
+     <img v-if="userData?.imageUrl" :src="userData?.imageUrl" loading="lazy">
+     <img v-else src="https://cdn-icons-png.flaticon.com/512/3237/3237472.png" loading="lazy">
    </q-avatar>
    </div>
    <div class="col-8 text-left">

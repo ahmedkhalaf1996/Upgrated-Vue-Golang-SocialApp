@@ -1,8 +1,8 @@
 <template>
     <div class="row col-12 constrain">
-        <div class="col-4 text-center">
+        <div class="col-4 text-center  resize-observer-fix">
             <q-avatar size="150px">
-                <img :src="UserData?.imageUrl">
+                <img :src="UserData?.imageUrl" loading="lazy">
             </q-avatar>
         </div>
         <div class="col-8 text-left">

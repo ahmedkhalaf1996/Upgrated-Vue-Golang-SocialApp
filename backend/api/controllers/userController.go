@@ -5,72 +5,126 @@ import (
 	"Server/models"
 	"Server/servergrpc"
 	"context"
+	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// GetUserBy ID
-// @Summary Get User By ID
-// @Description GetUser Deatils By ID
+// GetUserBy ID with Pagination
+// @Summary Get User By ID with paginated posts
+// @Description GetUser Details By ID with paginated posts including comments
 // @Tags Users
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID"
+// @Param page query int false "page number"
 // @Success 201 {object} models.UserModel
 // @Failure 400 {object} map[string]interface{}
 // @Router /user/getUser/{id} [get]
 func GetUserByID(c *fiber.Ctx) error {
-
 	var UserSchema = database.DB.Collection("users")
 	var PostSchema = database.DB.Collection("posts")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var user models.UserModel
-	var posts []models.PostModel
+	var posts []bson.M // Use bson.M to capture aggregation results
 
 	objId, _ := primitive.ObjectIDFromHex(c.Params("id"))
 	strID := c.Params("id")
-	// GET and REturn user posts
-	findOptions := options.Find()
-	postResult, err := PostSchema.Find(ctx, bson.M{"creator": strID}, findOptions)
-	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
-			"error": err,
-		})
-	}
+	page, _ := strconv.Atoi(c.Query("page", "1"))
 
-	defer postResult.Close(ctx)
-	for postResult.Next(ctx) {
-		var singlePost models.PostModel
-		postResult.Decode(&singlePost)
-		posts = append(posts, singlePost)
-	}
+	var LIMIT = 2
 
-	if posts == nil {
-		posts = make([]models.PostModel, 0)
-	}
-	// get nuser data
+	// Get user data first
 	userResult := UserSchema.FindOne(ctx, bson.M{"_id": objId})
-
 	if userResult.Err() != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"success": false,
 			"message": "User Not found",
 		})
 	}
-
 	userResult.Decode(&user)
 
+	// Filter for posts created by this specific user
+	filter := bson.M{"creator": strID}
+
+	// Get total number of posts by this user
+	total, err := PostSchema.CountDocuments(ctx, filter)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"message": "No Posts",
+		})
+	}
+
+	// Aggregation pipeline for posts with comments and user data
+	pipeline := []bson.M{
+		{"$match": bson.M{"creator": strID}},
+		{"$sort": bson.M{"_id": -1}},
+		{"$skip": int64((page - 1) * LIMIT)},
+		{"$limit": int64(LIMIT)},
+		{"$lookup": bson.M{
+			"from": "comments",
+			"let":  bson.M{"postId": "$_id"},
+			"pipeline": []bson.M{
+				{"$match": bson.M{"$expr": bson.M{"$eq": []interface{}{"$postId", "$$postId"}}}},
+				{"$sort": bson.M{"createdAt": -1}},
+				{"$lookup": bson.M{
+					"from": "users",
+					"let":  bson.M{"uid": "$userId"},
+					"pipeline": []bson.M{
+						{"$match": bson.M{"$expr": bson.M{"$eq": []interface{}{"$_id", "$$uid"}}}},
+						{"$project": bson.M{"name": 1, "imageUrl": 1}},
+					},
+					"as": "user",
+				}},
+				{"$unwind": bson.M{"path": "$user", "preserveNullAndEmptyArrays": true}},
+				{"$project": bson.M{"_id": 1, "value": 1, "createdAt": 1, "userId": 1, "user": 1}},
+			},
+			"as": "comments",
+		}},
+		{"$project": bson.M{
+			"_id":          1,
+			"creator":      1,
+			"title":        1,
+			"message":      1,
+			"name":         1,
+			"selectedFile": 1,
+			"likes":        1,
+			"createdAt":    1,
+			"comments":     1,
+		}},
+	}
+
+	cursor, err := PostSchema.Aggregate(ctx, pipeline)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to aggregate posts",
+		})
+	}
+	defer cursor.Close(ctx)
+
+	if err := cursor.All(ctx, &posts); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to decode posts",
+		})
+	}
+
+	if posts == nil {
+		posts = make([]bson.M, 0)
+	}
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"user":  user,
-		"posts": posts,
+		"user":          user,
+		"posts":         posts,
+		"currentPage":   page,
+		"numberOfPages": math.Ceil(float64(total) / float64(LIMIT)),
 	})
 }
 

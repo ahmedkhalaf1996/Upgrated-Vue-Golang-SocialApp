@@ -1,5 +1,5 @@
 <template>
-   <q-page class="constrain q-pa-md">
+   <q-page class="constrain q-pa-md resize-observer-fix">
      <div class=" row q-col-gutter-lg">
       <div class="col-3">
         <SideBar />
@@ -31,22 +31,27 @@
       </div>
       <div v-else class="col-6 q-mx-auto">
         <Post v-for="post in posts" :key="post._id" :post="post" />
-         <!-- add posts here compnont  -->
+        
+        <!-- Loading indicator for more posts -->
+        <div v-if="loadingMore" class="q-pa-lg text-center">
+          <q-spinner-hourglass color="primary" size="3em" />
+          <div class="q-mt-md text-grey-7">
+            Loading more posts...
+          </div>
+        </div>
+        
+        <!-- End of posts indicator -->
+        <div v-if="hasReachedEnd && posts.length > 0" class="q-pa-md text-center text-grey-6">
+          <q-icon name="eva-inbox-outline" size="24px" />
+          <div class="q-mt-sm">No more posts</div>
+        </div>
       </div>
       <div class="col-3">
         <Rightbar />
       </div> 
     </div>
      <div class="q-pa-lg flex justify-center fixed-bottom">
-      <Add @Created="GetAllPosts"/>
-      <q-pagination 
-        v-model="current"
-        color="primary"
-        :max="max"
-        :max-pages="5"
-        :ellipses="false"
-        :boundary-numbers="false"
-        />
+      <Add @Created="onPostCreated"/>
      </div>
    </q-page>
 </template>
@@ -57,19 +62,17 @@ import Post from '@/components/post/Post.vue'
 import SideBar from '@/components/sideBar/SideBar.vue';
 import Rightbar from '@/components/rightbar/Rightbar.vue';
 import { mapActions } from 'vuex';
+
 export default {
   name: 'HomeView',
   data(){
     return {
-      current:1,
-      max:0,
-      posts:[],
-      load:false
-    }
-  },
-  watch:{
-    current(){
-      this.GetAllPosts();
+      currentPage: 1,
+      maxPages: 0,
+      posts: [],
+      load: false,
+      loadingMore: false,
+      hasReachedEnd: false
     }
   },
   components: {
@@ -80,24 +83,100 @@ export default {
   },
   methods:{
     ...mapActions(['getPosts']),
-    async GetAllPosts(){
-      console.log("Get All Posts Called")
-      const data = await this.getPosts(this.current)
-      console.log("post data", data)
-      if(data?.data){
-       this.max = data?.numberOfPages;
-       this.posts = data?.data; 
-      }
+    
+    async GetAllPosts(append = false){
+      console.log("Get All Posts Called", "Page:", this.currentPage, "Append:", append)
+      
+      try {
+        const data = await this.getPosts(this.currentPage)
+        console.log("post data", data)
+        
+        if(data?.data){
+          this.maxPages = data?.numberOfPages;
+          
+          if (append) {
+            // Append new posts to existing ones
+            this.posts = [...this.posts, ...data.data];
+          } else {
+            // Replace posts (initial load)
+            this.posts = data.data; 
+          }
+          
+          // Check if we've reached the end
+          this.hasReachedEnd = this.currentPage >= this.maxPages;
+        }
 
-      if(data){
-        this.load = true;
+        if(data){
+          this.load = true;
+        }
+      } catch (error) {
+        console.error("Error loading posts:", error);
       }
+    },
+    
+    async loadMorePosts() {
+      // Prevent multiple requests
+      if (this.loadingMore || this.hasReachedEnd) {
+        return;
+      }
+      
+      // Check if there are more pages
+      if (this.currentPage < this.maxPages) {
+        this.loadingMore = true;
+        this.currentPage++;
+        
+        try {
+          await this.GetAllPosts(true);
+          // Wait 2 seconds
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+          console.error('Error loading more posts:', error);
+          this.currentPage--; // Revert on error
+        } finally {
+          this.loadingMore = false;
+        }
+      }
+    },
+    
+    handleScroll() {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      
+      // Load more when user is 300px from bottom
+      if (scrollTop + windowHeight >= documentHeight - 300) {
+        this.loadMorePosts();
+      }
+    },
+    
+    onPostCreated() {
+      // Reset and reload
+      this.currentPage = 1;
+      this.hasReachedEnd = false;
+      this.posts = [];
+      this.GetAllPosts(false);
     }
   },
+  
   async mounted(){
-    setTimeout(() => {
-      this.GetAllPosts()
+    // Load initial posts
+    setTimeout(async () => {
+      await this.GetAllPosts();
+      
+      // Add scroll listener
+      window.addEventListener('scroll', this.handleScroll);
     }, 5000);
   },
+  
+  beforeUnmount() {
+    // Remove scroll listener
+    window.removeEventListener('scroll', this.handleScroll);
+  }
 }
 </script>
+
+<style scoped>
+.q-page {
+  scroll-behavior: smooth;
+}
+</style>
