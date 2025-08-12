@@ -3,7 +3,7 @@ package controllers
 import (
 	"Server/database"
 	"Server/models"
-	"Server/servergrpc"
+	"Server/services"
 	"context"
 	"math"
 	"slices"
@@ -262,7 +262,7 @@ func FollowingUser(c *fiber.Ctx) error {
 		// set the id fiald of the notficato object
 		notification.ID = res.InsertedID.(primitive.ObjectID)
 		// call grpc
-		servergrpc.SendNotification(notification)
+		services.SendNotification(notification)
 	}
 
 	updateFirst := bson.M{"followers": FirstUser.Followers}

@@ -3,7 +3,7 @@ package controllers
 import (
 	"Server/database"
 	"Server/models"
-	"Server/servergrpc"
+	"Server/services"
 	"context"
 	"math"
 	"slices"
@@ -428,7 +428,8 @@ func CommentPost(c *fiber.Ctx) error {
 		res, _ := notificationCol.InsertOne(ctx, notification)
 		if oid, ok := res.InsertedID.(primitive.ObjectID); ok {
 			notification.ID = oid
-			// servergrpc.SendNotification(notification)
+			services.SendNotification(notification)
+
 		}
 	}
 
@@ -575,8 +576,8 @@ func LikePost(c *fiber.Ctx) error {
 
 		// set the id fiald of the notficato object
 		notification.ID = res.InsertedID.(primitive.ObjectID)
-		// call grpc
-		servergrpc.SendNotification(notification)
+		services.SendNotification(notification)
+
 		// End create notfication
 	}
 
