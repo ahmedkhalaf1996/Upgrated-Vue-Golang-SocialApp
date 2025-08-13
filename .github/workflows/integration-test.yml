@@ -41,7 +41,7 @@ jobs:
       - name: Start Backend API 
         run : |
          echo "Starting backend server.."
-         go run main.go &
+         go run cmd/main.go cmd/SetupApi.go cmd/SetupRealTimeChat.go cmd/SetupRealtimeNotifications.go  &
          echo &! > backend.pid 
          sleep 10 
          echo "backend process started with PIN : $(cat backend.pid)"
