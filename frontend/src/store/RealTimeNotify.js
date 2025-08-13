@@ -4,29 +4,28 @@ const RealTimeNotify = {
         notifyideslistNumber: 0,
         notifyidData: null,
     },
-    getters:{
-        Getnotifyideslist:(state) => () => {
+    getters: {
+        Getnotifyideslist: (state) => () => {
             return state.notifyideslistNumber
         },
     },
-    mutations:{
-        SET_WS(state, ws){
+    mutations: {
+        SET_WS(state, ws) {
             state.ws = ws;
         },
-        ADD_NOTIFICATION(state, notify){
-            state.notifyideslistNumber = state.notifyideslistNumber +1;
+        ADD_NOTIFICATION(state, notify) {
+            state.notifyideslistNumber = state.notifyideslistNumber + 1;
             state.notifyidData = notify;
-
         }
     },
-    actions:{
-        async connectToNotify(context){
-            if(JSON.parse(localStorage.getItem('profile')) && context.state.ws == null) {
+    actions: {
+        async connectToNotify(context) {
+            if (JSON.parse(localStorage.getItem('profile')) && context.state.ws == null) {
                 const Userid = JSON.parse(localStorage.getItem('profile')).result._id;
                 const uri = process.env.VUE_APP_RealTimeNotificationUrl;
                 const ws = new WebSocket(`${uri}${Userid}`)
 
-                ws.onopen = ()=> {
+                ws.onopen = () => {
                     context.commit('SET_WS', ws);
                 }
 
@@ -37,22 +36,17 @@ const RealTimeNotify = {
             }
         },
 
-        async StopConnectionToNotify(context){
+        async StopConnectionToNotify(context) {
             try {
-                if (context.state.ws){
-                context.state.ws.close()
-                context.commit('SET_WS', null);
+                if (context.state.ws) {
+                    context.state.ws.close()
+                    context.commit('SET_WS', null);
                 }
             } catch (error) {
-                console.log("error", error)          
+                console.log("error", error)
             }
         }
-
     },
-
-
 }
 
 export default RealTimeNotify;
-
-

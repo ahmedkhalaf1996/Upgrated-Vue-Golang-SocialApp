@@ -1,26 +1,26 @@
 import * as api from '../api/index.js'
 
 const NotificationStore = {
-    state : {
-        unReadedNotification:0
+    state: {
+        unReadedNotification: 0
     },
     getters: {
-        GetUnReadedNotification : (state) => () => {
+        GetUnReadedNotification: (state) => () => {
             return state.unReadedNotification
         },
     },
-    mutations:{
-        updateUnReadedNofification(state, payload){
+    mutations: {
+        updateUnReadedNofification(state, payload) {
             state.unReadedNotification = payload
         },
     },
-    actions:{
-        async GetUnReadedNotifyNum(context, id){
+    actions: {
+        async GetUnReadedNotifyNum(context, id) {
             try {
-                let {data} = await api.GetNofificationForUser(id)
+                let { data } = await api.GetNofificationForUser(id)
                 let numofunreadednot = 0;
                 data.notifications.forEach(el => {
-                    if (! el.isreded ) {
+                    if (!el.isreded) {
                         numofunreadednot++;
                     }
                 });
@@ -32,14 +32,12 @@ const NotificationStore = {
                 console.log(error)
             }
         },
-        async MarkNotifyAsReaded(context, id){
+        async MarkNotifyAsReaded(context, id) {
             try {
-            
-                let {data} = await api.MartNotificationAsReaded(id)
+                let { data } = await api.MartNotificationAsReaded(id)
                 context.commit('updateUnReadedNofification', 0)
 
                 return data;
-
             } catch (error) {
                 console.log(error)
             }
@@ -47,7 +45,4 @@ const NotificationStore = {
     }
 }
 
-
-
 export default NotificationStore;
-

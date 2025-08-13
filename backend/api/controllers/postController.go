@@ -18,18 +18,17 @@ import (
 )
 
 // Create Post
-// @Summary create  a new post
+// @Summary create a new post
 // @Description create new post
 // @Tags Posts
 // @Accept json
 // @Produce json
-// @Param post body models.CreateOrUpdatePost true "post create  deatils"
+// @Param post body models.CreateOrUpdatePost true "post create details"
 // @Success 201 {object} models.PostModel
 // @Failure 400 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /posts [post]
 func CraetePost(c *fiber.Ctx) error {
-
 	var UserSchema = database.DB.Collection("users")
 	var PostSchema = database.DB.Collection("posts")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -39,63 +38,182 @@ func CraetePost(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"error":   "Invalid request body",
-			"deatils": err.Error(),
+			"details": err.Error(),
 		})
 	}
 
-	// start set data
+	// Convert userId string to ObjectID
+	userIdStr := c.Locals("userId").(string)
+	userObjId, err := primitive.ObjectIDFromHex(userIdStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid user ID",
+		})
+	}
+
+	// Verify user exists
+	var user models.UserModel
+	err = UserSchema.FindOne(ctx, bson.M{"_id": userObjId}).Decode(&user)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "User not found",
+		})
+	}
+
+	// Create post with ObjectID creator
 	var post models.PostModel
-	post.Creator = c.Locals("userId").(string)
+	post.Creator = userObjId // Store as ObjectID
 	post.Likes = make([]string, 0)
 	post.CreatedAt = time.Now()
 	post.Title = body.Title
 	post.Message = body.Message
 	post.SelectedFile = body.SelectedFile
-	//
 
-	var user models.UserModel
-	objId, _ := primitive.ObjectIDFromHex(c.Locals("userId").(string))
-	err := UserSchema.FindOne(ctx, bson.M{"_id": objId}).Decode(&user)
+	// Insert post
+	result, err := PostSchema.InsertOne(ctx, &post)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	//
-	post.Name = user.Name
-	// set data end
-	// craete post
-	result, err := PostSchema.InsertOne(ctx, &post)
 
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(err)
-	} else {
-		var createdPost *models.PostModel
-		query := bson.M{"_id": result.InsertedID}
-
-		PostSchema.FindOne(ctx, query).Decode(&createdPost)
-		return c.Status(fiber.StatusCreated).JSON(createdPost)
+	// Fetch the created post with user data
+	var createdPost models.PostModel
+	pipeline := []bson.M{
+		{"$match": bson.M{"_id": result.InsertedID}},
+		{"$lookup": bson.M{
+			"from":         "users",
+			"localField":   "creator",
+			"foreignField": "_id",
+			"as":           "user",
+		}},
+		{"$unwind": "$user"},
+		{"$project": bson.M{
+			"_id":           1,
+			"creator":       1,
+			"title":         1,
+			"message":       1,
+			"selectedFile":  1,
+			"likes":         1,
+			"createdAt":     1,
+			"user.name":     1,
+			"user.imageUrl": 1,
+		}},
 	}
 
+	cursor, err := PostSchema.Aggregate(ctx, pipeline)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch created post",
+		})
+	}
+	defer cursor.Close(ctx)
+
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&createdPost); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to decode post",
+			})
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(createdPost)
 }
 
-// Get Post
-// @Summary Get  a new post
-// @Description Get new post
+// GetPost - Get single post with user data
+// @Summary Get single post
+// @Description Get post by ID with populated user data
 // @Tags Posts
 // @Accept json
 // @Produce json
-// @Param id path string true "Post id"
+// @Param id path string true "Post ID"
 // @Success 200 {object} models.PostModel
-// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security BearerAuth
 // @Router /posts/{id} [get]
 func GetPost(c *fiber.Ctx) error {
-	id := c.Params("id")
-	postID, err := primitive.ObjectIDFromHex(id)
+	var PostSchema = database.DB.Collection("posts")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	postId := c.Params("id")
+	objId, err := primitive.ObjectIDFromHex(postId)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid post ID"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid post ID",
+		})
 	}
-	return getPostWithComments(c, postID)
+
+	var post bson.M
+	pipeline := []bson.M{
+		{"$match": bson.M{"_id": objId}},
+		// Lookup user data for post creator
+		{"$lookup": bson.M{
+			"from":         "users",
+			"localField":   "creator",
+			"foreignField": "_id",
+			"as":           "user",
+		}},
+		{"$unwind": "$user"},
+		// Lookup comments with user data
+		{"$lookup": bson.M{
+			"from": "comments",
+			"let":  bson.M{"postId": "$_id"},
+			"pipeline": []bson.M{
+				{"$match": bson.M{"$expr": bson.M{"$eq": []interface{}{"$postId", "$$postId"}}}},
+				{"$sort": bson.M{"createdAt": -1}},
+				{"$lookup": bson.M{
+					"from": "users",
+					"let":  bson.M{"uid": "$userId"},
+					"pipeline": []bson.M{
+						{"$match": bson.M{"$expr": bson.M{"$eq": []interface{}{"$_id", "$$uid"}}}},
+						{"$project": bson.M{"name": 1, "imageUrl": 1}},
+					},
+					"as": "user",
+				}},
+				{"$unwind": bson.M{"path": "$user", "preserveNullAndEmptyArrays": true}},
+				{"$project": bson.M{"_id": 1, "value": 1, "createdAt": 1, "userId": 1, "user": 1}},
+			},
+			"as": "comments",
+		}},
+		// Project final fields
+		{"$project": bson.M{
+			"_id":           1,
+			"creator":       1,
+			"title":         1,
+			"message":       1,
+			"selectedFile":  1,
+			"likes":         1,
+			"createdAt":     1,
+			"comments":      1,
+			"user.name":     1,
+			"user.imageUrl": 1,
+		}},
+	}
+
+	cursor, err := PostSchema.Aggregate(ctx, pipeline)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch post",
+		})
+	}
+	defer cursor.Close(ctx)
+
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&post); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to decode post",
+			})
+		}
+	} else {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Post not found",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"post": post,
+	})
 }
 
 // Update Post
@@ -134,7 +252,7 @@ func UpdatePost(c *fiber.Ctx) error {
 	}
 	PostSchema.FindOne(ctx, bson.M{"_id": primID}).Decode(&authPost)
 
-	if authPost.Creator != c.Locals("userId").(string) {
+	if authPost.Creator.Hex() != c.Locals("userId").(string) {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"error": "You Are Not authorized to update this post.",
 		})
@@ -177,21 +295,30 @@ func GetAllPosts(c *fiber.Ctx) error {
 	defer cancel()
 
 	var user models.UserModel
-	var posts []bson.M // Use bson.M to capture aggregation results
+	var posts []bson.M
 
 	userid := c.Query("id")
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 
-	// get user following list ids and add our user id to it
+	// Get user following list ids and add our user id to it
 	MainUserid, _ := primitive.ObjectIDFromHex(userid)
 	userSchema.FindOne(ctx, bson.M{"_id": MainUserid}).Decode(&user)
-	user.Following = append(user.Following, userid)
+
+	// Convert following strings to ObjectIDs
+	var followingObjIds []primitive.ObjectID
+	for _, followId := range user.Following {
+		if objId, err := primitive.ObjectIDFromHex(followId); err == nil {
+			followingObjIds = append(followingObjIds, objId)
+		}
+	}
+	// Add current user ID
+	followingObjIds = append(followingObjIds, MainUserid)
 
 	var LIMIT = 2
 
-	filter := bson.M{"creator": bson.M{"$in": user.Following}}
+	filter := bson.M{"creator": bson.M{"$in": followingObjIds}}
 
-	// get total num of posts
+	// Get total num of posts
 	total, err := PostSchema.CountDocuments(ctx, filter)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -199,13 +326,20 @@ func GetAllPosts(c *fiber.Ctx) error {
 		})
 	}
 
-	postCol := database.DB.Collection("posts")
-
 	pipeline := []bson.M{
-		{"$match": bson.M{"creator": bson.M{"$in": user.Following}}},
+		{"$match": bson.M{"creator": bson.M{"$in": followingObjIds}}},
 		{"$sort": bson.M{"_id": -1}},
 		{"$skip": int64((page - 1) * LIMIT)},
 		{"$limit": int64(LIMIT)},
+		// Lookup user data for post creator
+		{"$lookup": bson.M{
+			"from":         "users",
+			"localField":   "creator",
+			"foreignField": "_id",
+			"as":           "user",
+		}},
+		{"$unwind": "$user"},
+		// Lookup comments with user data
 		{"$lookup": bson.M{
 			"from": "comments",
 			"let":  bson.M{"postId": "$_id"},
@@ -226,21 +360,22 @@ func GetAllPosts(c *fiber.Ctx) error {
 			},
 			"as": "comments",
 		}},
-		// Add this project stage to ensure all fields are included
+		// Project final fields
 		{"$project": bson.M{
-			"_id":          1,
-			"creator":      1,
-			"title":        1,
-			"message":      1,
-			"name":         1,
-			"selectedFile": 1,
-			"likes":        1,
-			"createdAt":    1,
-			"comments":     1,
+			"_id":           1,
+			"creator":       1,
+			"title":         1,
+			"message":       1,
+			"selectedFile":  1,
+			"likes":         1,
+			"createdAt":     1,
+			"comments":      1,
+			"user.name":     1,
+			"user.imageUrl": 1,
 		}},
 	}
 
-	cursor, err := postCol.Aggregate(ctx, pipeline)
+	cursor, err := PostSchema.Aggregate(ctx, pipeline)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to aggregate posts",
@@ -419,17 +554,16 @@ func CommentPost(c *fiber.Ctx) error {
 	var user models.UserModel
 	if err := userCol.FindOne(ctx, bson.M{"_id": userObjID}).Decode(&user); err == nil {
 		notification := models.Notification{
-			MainUID:   post.Creator,
+			MainUID:   post.Creator.Hex(),
 			TargetID:  postID.Hex(),
 			Deatils:   user.Name + " Commented on your Post",
-			User:      models.User{Name: user.Name, Avatart: user.ImageUrl},
+			UserID:    user.ID.Hex(), // Only store user ID
 			CreatedAt: time.Now(),
 		}
 		res, _ := notificationCol.InsertOne(ctx, notification)
 		if oid, ok := res.InsertedID.(primitive.ObjectID); ok {
 			notification.ID = oid
 			services.SendNotification(notification)
-
 		}
 	}
 
@@ -560,10 +694,10 @@ func LikePost(c *fiber.Ctx) error {
 		userResult.Decode(&user)
 		// Create Notification
 		notification := models.Notification{
-			MainUID:   post.Creator,
+			MainUID:   post.Creator.Hex(),
 			TargetID:  post.ID.Hex(),
 			Deatils:   user.Name + " Liked your Post",
-			User:      models.User{Name: user.Name, Avatart: user.ImageUrl},
+			UserID:    user.ID.Hex(), // Only store user ID
 			CreatedAt: time.Now(),
 		}
 		res, err := NotificationSchema.InsertOne(ctx, notification)
@@ -628,7 +762,7 @@ func DeletePost(c *fiber.Ctx) error {
 	}
 	PostSchema.FindOne(ctx, bson.M{"_id": primID}).Decode(&authPost)
 
-	if authPost.Creator != c.Locals("userId").(string) {
+	if authPost.Creator.Hex() != c.Locals("userId").(string) {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"error": "You Are Not authorized to delete this post.",
 		})
@@ -716,7 +850,7 @@ func DeleteComment(c *fiber.Ctx) error {
 	}
 
 	// Check authorization: comment owner or post owner
-	if comment.UserID != currentUserObjID && post.Creator != currentUserID {
+	if comment.UserID != currentUserObjID && post.Creator != currentUserObjID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"error": "You are not authorized to delete this comment",
 		})

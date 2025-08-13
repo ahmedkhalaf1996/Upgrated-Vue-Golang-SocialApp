@@ -8,26 +8,71 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// MarkNotAsReaded Post
-// @Summary Mark Notfication AsReaded  for a user
-// @Description MarkNotAsReaded
-// @Tags Notifications
-// @Accept json
-// @Produce json
-// @Param id query string true "User ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]interface{}
-// @Router /notification/mark-notification-asreaded [get]
-func MarknotAsReaded(c *fiber.Ctx) error {
+// NotificationResponse represents the response structure with populated user data
+type NotificationResponse struct {
+	ID        primitive.ObjectID `json:"_id,omitempty"`
+	Deatils   string             `json:"deatils"`
+	MainUID   string             `json:"mainuid"`
+	TargetID  string             `json:"targetid"`
+	IsReaded  bool               `json:"isreded"`
+	CreatedAt time.Time          `json:"createdAt"`
+	User      UserData           `json:"user"`
+}
 
-	// parse query paramter
+type UserData struct {
+	Name     string `json:"name"`
+	ImageUrl string `json:"imageUrl"`
+}
+
+func populateNotificationsWithUserData(ctx context.Context, notifications []models.Notification) ([]NotificationResponse, error) {
+	var response []NotificationResponse
+	userCol := database.DB.Collection("users")
+
+	for _, notification := range notifications {
+		// Convert UserID string to ObjectID
+		userObjID, err := primitive.ObjectIDFromHex(notification.UserID)
+		if err != nil {
+			continue // Skip invalid user IDs
+		}
+
+		// Fetch fresh user data
+		var user models.UserModel
+		err = userCol.FindOne(ctx, bson.M{"_id": userObjID}).Decode(&user)
+		if err != nil {
+			// If user not found, use default values
+			user.Name = "Unknown User"
+			user.ImageUrl = ""
+		}
+
+		// Create response with fresh user data
+		notificationResp := NotificationResponse{
+			ID:        notification.ID,
+			Deatils:   notification.Deatils,
+			MainUID:   notification.MainUID,
+			TargetID:  notification.TargetID,
+			IsReaded:  notification.IsReaded,
+			CreatedAt: notification.CreatedAt,
+			User: UserData{
+				Name:     user.Name,
+				ImageUrl: user.ImageUrl,
+			},
+		}
+		response = append(response, notificationResp)
+	}
+
+	return response, nil
+}
+
+func MarknotAsReaded(c *fiber.Ctx) error {
+	// parse query parameter
 	id := c.Query("id")
 	if id == "" {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "id in query is Requierd",
+			"error": "id in query is Required",
 		})
 	}
 
@@ -43,53 +88,50 @@ func MarknotAsReaded(c *fiber.Ctx) error {
 	_, err := NotificationSchema.UpdateMany(ctx, filter, update)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Faild to mark notifications as read",
+			"message": "Failed to mark notifications as read",
 			"error":   err.Error(),
 		})
 	}
 
-	// retreive the udpated not
+	// retrieve the updated notifications
 	options := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
 	cursor, err := NotificationSchema.Find(ctx, filter, options)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Faild retruieve the udpated notifications",
+			"message": "Failed to retrieve the updated notifications",
 			"error":   err.Error(),
 		})
 	}
-
 	defer cursor.Close(ctx)
 
 	var notifications []models.Notification
 	if err := cursor.All(ctx, &notifications); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Faild to decoded notifications",
+			"message": "Failed to decode notifications",
+			"error":   err.Error(),
+		})
+	}
+
+	// Populate with fresh user data
+	response, err := populateNotificationsWithUserData(ctx, notifications)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to populate user data",
 			"error":   err.Error(),
 		})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"notifications": notifications,
+		"notifications": response,
 	})
 }
 
-// GetUserNotification Post
-// @Summary Get user notifications
-// @Description GetUserNotification
-// @Tags Notifications
-// @Accept json
-// @Produce json
-// @Param userid path string true "User ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]interface{}
-// @Router /notification/{userid} [get]
 func GetUserNotification(c *fiber.Ctx) error {
-
-	// parse query paramter
+	// parse query parameter
 	id := c.Params("userid")
 	if id == "" {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "id in Params is Requierd",
+			"error": "id in Params is Required",
 		})
 	}
 
@@ -97,34 +139,44 @@ func GetUserNotification(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// construct the filter and update
+	// construct the filter
 	filter := bson.M{"mainuid": bson.M{"$regex": id, "$options": "i"}}
 	options := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
-	// retreive the udpated not
+
+	// retrieve notifications
 	cursor, err := NotificationSchema.Find(ctx, filter, options)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Faild retruieve the udpated notifications",
+			"message": "Failed to retrieve notifications",
 			"error":   err.Error(),
 		})
 	}
-
 	defer cursor.Close(ctx)
 
 	var notifications []models.Notification
 	if err := cursor.All(ctx, &notifications); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"message": "Faild to decoded notifications",
+			"message": "Failed to decode notifications",
 			"error":   err.Error(),
 		})
 	}
 
 	if len(notifications) == 0 {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
-			"notifications": []models.Notification{},
+			"notifications": []NotificationResponse{},
 		})
 	}
+
+	// Populate with fresh user data
+	response, err := populateNotificationsWithUserData(ctx, notifications)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to populate user data",
+			"error":   err.Error(),
+		})
+	}
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"notifications": notifications,
+		"notifications": response,
 	})
 }

@@ -30,7 +30,6 @@
                     <q-card-section class="row items-center q-pb-none" v-if="$q.screen.lt.sm">
                         <div class="text-h6">Create Post</div>
                         <q-space />
-                        <q-btn icon="close" flat round dense v-close-popup />
                     </q-card-section>
                     
                     <!-- Desktop Header -->

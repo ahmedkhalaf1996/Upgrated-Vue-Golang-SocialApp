@@ -1,10 +1,10 @@
 <template>
    <q-page class="constrain q-pa-md resize-observer-fix">
-     <div class=" row q-col-gutter-lg">
+     <div class="row q-col-gutter-lg">
       <div class="col-3">
         <SideBar />
       </div>
-      <div v-if="!load" class="col-6  q-mx-auto">
+      <div v-if="!load" class="col-6 q-mx-auto">
         <div class="q-pa-md">
           <q-card>
             <q-item>
@@ -45,15 +45,19 @@
           <q-icon name="eva-inbox-outline" size="24px" />
           <div class="q-mt-sm">No more posts</div>
         </div>
+        
+        <!-- Add padding at bottom to prevent last post being hidden by sticky button -->
+        <div class="bottom-spacer"></div>
       </div>
       <div class="col-3">
         <Rightbar />
       </div> 
     </div>
-     <div class="q-pa-lg flex justify-center fixed-bottom">
-      <Add @Created="onPostCreated"/>
-     </div>
+    
+    <!-- Add Component - Now properly positioned as sticky -->
    </q-page>
+       <Add @Created="onPostCreated"/>
+
 </template>
 
 <script>
@@ -155,6 +159,9 @@ export default {
       this.hasReachedEnd = false;
       this.posts = [];
       this.GetAllPosts(false);
+      
+      // Optionally scroll to top to see the new post
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   },
   
@@ -178,5 +185,9 @@ export default {
 <style scoped>
 .q-page {
   scroll-behavior: smooth;
+  position: relative;
+  min-height: 100vh;
 }
+
+
 </style>

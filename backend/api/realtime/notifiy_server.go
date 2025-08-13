@@ -19,8 +19,8 @@ type Notification struct {
 }
 
 type User struct {
-	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
+	Name     string `json:"name"`
+	ImageUrl string `json:"imageUrl"` // Changed from Avatar to ImageUrl
 }
 
 type NotificationManager struct {

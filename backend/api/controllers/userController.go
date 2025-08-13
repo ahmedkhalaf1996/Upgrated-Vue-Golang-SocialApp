@@ -248,7 +248,7 @@ func FollowingUser(c *fiber.Ctx) error {
 			MainUID:   FirstUser.ID.Hex(),
 			TargetID:  SecondUser.ID.Hex(),
 			Deatils:   SecondUser.Name + " Start Following You!",
-			User:      models.User{Name: SecondUser.Name, Avatart: SecondUser.ImageUrl},
+			UserID:    SecondUser.ID.Hex(), // Only store user ID
 			CreatedAt: time.Now(),
 		}
 		res, err := NotificationSchema.InsertOne(ctx, notification)
