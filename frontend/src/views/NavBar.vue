@@ -284,7 +284,7 @@
       }
     },
     async mounted(){
-    this.SetData();
+    await this.SetData();
     // getnot number
     await this.UNreadedNotifyCount();
     // get chat messages numbers

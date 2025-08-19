@@ -37,7 +37,6 @@ func GetUserByID(c *fiber.Ctx) error {
 	var posts []bson.M // Use bson.M to capture aggregation results
 
 	objId, _ := primitive.ObjectIDFromHex(c.Params("id"))
-	strID := c.Params("id")
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 
 	var LIMIT = 2
@@ -52,8 +51,8 @@ func GetUserByID(c *fiber.Ctx) error {
 	}
 	userResult.Decode(&user)
 
-	// Filter for posts created by this specific user
-	filter := bson.M{"creator": strID}
+	// Filter for posts created by this specific user - USE ObjectID instead of string
+	filter := bson.M{"creator": objId}
 
 	// Get total number of posts by this user
 	total, err := PostSchema.CountDocuments(ctx, filter)
@@ -65,7 +64,7 @@ func GetUserByID(c *fiber.Ctx) error {
 
 	// Aggregation pipeline for posts with comments and user data
 	pipeline := []bson.M{
-		{"$match": bson.M{"creator": strID}},
+		{"$match": bson.M{"creator": objId}}, // Use ObjectID instead of string
 		{"$sort": bson.M{"_id": -1}},
 		{"$skip": int64((page - 1) * LIMIT)},
 		{"$limit": int64(LIMIT)},

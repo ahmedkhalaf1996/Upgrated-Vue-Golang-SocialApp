@@ -10,7 +10,7 @@ const Auth = {
   getters: {
     GetUserData: (state) => () => {
         return state.authData
-    }
+    },
   },
   mutations: {
     Auth(state, payload){
