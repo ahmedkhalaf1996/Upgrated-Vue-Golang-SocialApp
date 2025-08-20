@@ -5,6 +5,9 @@ import (
 	"Server/models"
 	"Server/services"
 	"context"
+	"encoding/json"
+	"fmt"
+	"log"
 	"math"
 	"slices"
 	"sort"
@@ -39,7 +42,29 @@ func GetUserByID(c *fiber.Ctx) error {
 	objId, _ := primitive.ObjectIDFromHex(c.Params("id"))
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 
-	var LIMIT = 2
+	// Create cache key for user profile and posts
+	userId := c.Params("id")
+	cacheKey := fmt.Sprintf("user:profile:%s:page:%d", userId, page)
+
+	// Try to get from cache first
+	cachedData, err := database.RedisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// Cache hit - return cached data
+		var cachedResponse models.CachedGetUserResponse
+		if err := json.Unmarshal([]byte(cachedData), &cachedResponse); err == nil {
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"user":          cachedResponse.User,
+				"posts":         cachedResponse.Posts,
+				"currentPage":   cachedResponse.CurrentPage,
+				"numberOfPages": cachedResponse.NumberOfPages,
+				"cached":        true, // Optional: indicate this came from cache
+			})
+		}
+	} else {
+		log.Printf("Cache miss for user profile %s: %s", userId, err)
+	}
+
+	var LIMIT = 12
 
 	// Get user data first
 	userResult := UserSchema.FindOne(ctx, bson.M{"_id": objId})
@@ -117,6 +142,24 @@ func GetUserByID(c *fiber.Ctx) error {
 
 	if posts == nil {
 		posts = make([]bson.M, 0)
+	}
+
+	// Prepare response for caching
+	numberOfPages := math.Ceil(float64(total) / float64(LIMIT))
+	response := models.CachedGetUserResponse{
+		User:          user,
+		Posts:         posts,
+		CurrentPage:   page,
+		NumberOfPages: numberOfPages,
+	}
+
+	// Cache the response for 1 minutes (300 seconds)
+	// You can adjust the cache duration based on your needs
+	responseJSON, err := json.Marshal(response)
+	if err == nil {
+		database.RedisClient.Set(ctx, cacheKey, responseJSON, 10*time.Second)
+	} else {
+		log.Printf("Failed to marshal response for caching: %s", err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{

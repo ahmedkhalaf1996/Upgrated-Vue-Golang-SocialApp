@@ -131,8 +131,8 @@ export default {
         
         try {
           await this.GetAllPosts(true);
-          // Wait 2 seconds
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Wait 1 seconds
+          await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
           console.error('Error loading more posts:', error);
           this.currentPage--; // Revert on error
@@ -172,7 +172,7 @@ export default {
       
       // Add scroll listener
       window.addEventListener('scroll', this.handleScroll);
-    }, 5000);
+    }, 1000);
   },
   
   beforeUnmount() {

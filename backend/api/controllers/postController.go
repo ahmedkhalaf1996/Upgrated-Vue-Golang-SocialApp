@@ -5,6 +5,9 @@ import (
 	"Server/models"
 	"Server/services"
 	"context"
+	"encoding/json"
+	"fmt"
+	"log"
 	"math"
 	"slices"
 	"sort"
@@ -300,6 +303,29 @@ func GetAllPosts(c *fiber.Ctx) error {
 	userid := c.Query("id")
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 
+	// Create cache key
+	cacheKey := fmt.Sprintf("posts:user:%s:page:%d", userid, page)
+
+	// Try to get from cache first
+	cachedData, err := database.RedisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// Cache hit - return cached data
+		var cachedResponse models.CachedGetAllPostResponse
+		if err := json.Unmarshal([]byte(cachedData), &cachedResponse); err == nil {
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"data":          cachedResponse.Data,
+				"currentPage":   cachedResponse.CurrentPage,
+				"numberOfPages": cachedResponse.NumberOfPages,
+				"cached":        true, // Optional: indicate this came from cache
+			})
+		}
+	} else {
+		log.Printf("Error Cached DATA !!!!!!!!!!!!!!!! %s", err)
+
+	}
+
+	// Cache miss - fetch from database
+
 	// Get user following list ids and add our user id to it
 	MainUserid, _ := primitive.ObjectIDFromHex(userid)
 	userSchema.FindOne(ctx, bson.M{"_id": MainUserid}).Decode(&user)
@@ -314,7 +340,7 @@ func GetAllPosts(c *fiber.Ctx) error {
 	// Add current user ID
 	followingObjIds = append(followingObjIds, MainUserid)
 
-	var LIMIT = 2
+	var LIMIT = 12
 
 	filter := bson.M{"creator": bson.M{"$in": followingObjIds}}
 
@@ -387,6 +413,19 @@ func GetAllPosts(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to decode posts",
 		})
+	}
+
+	// Prepare response
+	response := models.CachedGetAllPostResponse{
+		Data:          posts,
+		CurrentPage:   page,
+		NumberOfPages: math.Ceil(float64(total) / float64(LIMIT)),
+	}
+
+	// Cache the response for 10 seconds
+	responseJSON, err := json.Marshal(response)
+	if err == nil {
+		database.RedisClient.Set(ctx, cacheKey, responseJSON, 10*time.Second)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{

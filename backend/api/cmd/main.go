@@ -31,6 +31,9 @@ func main() {
 
 	// Connect to database
 	database.Connect()
+	// call redis
+	database.InitRedis()
+	defer database.CloseRedis() // Cleanup Redis on exit
 
 	// Create Fiber app
 	app := fiber.New()
